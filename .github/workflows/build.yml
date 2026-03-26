@@ -10,8 +10,6 @@ on:
         description: 'push changes to the repo'
         required: true
         type: boolean
-      nonce:
-        description: 'some unique nonce'
 
 permissions:
   contents: write
@@ -22,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }}${{ matrix.name_suffix || '' }}, nonce=${{ github.event.inputs.nonce }})
+    name: Build (${{ matrix.os }}${{ matrix.name_suffix || '' }})
     strategy:
       fail-fast: false
       matrix:
@@ -30,7 +28,7 @@ jobs:
           - os: ubuntu-latest
           - os: ubuntu-24.04-arm
           - os: macos-14
-          - os: macos-15-intel
+          - os: macos-13
           - os: windows-latest
           - os: ubuntu-latest
             container: alpine:latest
@@ -156,32 +154,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Switch to new branch
-        env:
-          TURSO_REF: ${{ github.event.inputs.turso_ref }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # Determine branch name based on ref type
-          BRANCH="turso-branch-${TURSO_REF}"
-
-          echo "Target branch: $BRANCH"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Try to fetch existing branch if present
-          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
-            echo "Branch $BRANCH exists on remote — checking it out."
-
-            git fetch origin "$BRANCH":"$BRANCH"
-            git checkout "$BRANCH"
-          else
-            echo "Branch $BRANCH does not exist — creating it."
-            git checkout -b "$BRANCH"
-          fi
-
       - uses: actions/download-artifact@v4
         with:
           path: _libs_artifacts
@@ -226,7 +198,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          BRANCH="turso-branch-${TURSO_REF}"
+          # Determine branch name based on ref type
+          if [[ "$TURSO_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([\-+][0-9A-Za-z\.-]+)?$ ]]; then
+            BRANCH="${TURSO_REF}"
+          else
+            BRANCH="turso-branch-${TURSO_REF}"
+          fi
+
+          echo "Target branch: $BRANCH"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Try to fetch existing branch if present
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Branch $BRANCH exists on remote — checking it out."
+            git fetch origin "$BRANCH":"$BRANCH"
+            git checkout "$BRANCH"
+          else
+            echo "Branch $BRANCH does not exist — creating it."
+            git checkout -b "$BRANCH"
+          fi
 
           echo "Staging changes..."
           git add libs
@@ -240,8 +232,3 @@ jobs:
 
           echo "Pushing branch: $BRANCH"
           git push --set-upstream origin "$BRANCH"
-
-          if [[ "$TURSO_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([\-+][0-9A-Za-z\.-]+)?$ ]]; then
-            git tag "$TURSO_REF"
-            git push --tags
-          fi
